@@ -1,0 +1,26 @@
+.gradle/
+build/
+out/
+classes/
+run/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.DS_Store
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+reference/
+
+# Local compile-time dependency (third-party Axiom jar)
+Axiom-*.jar
+
+# Runtime logs / crash dumps at the project root
+latest.log
+crash-*.txt
+
+# local cross toolchains
+/tools/zigpkg/
+/tools/zig/

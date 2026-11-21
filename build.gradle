@@ -1,0 +1,81 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.15.5'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Native Dear ImGui libraries produced by native/build.sh. The directory is
+// optional: when it is absent the mod keeps the pure-Java fallback / the
+// original binding natives.
+sourceSets {
+    main {
+        resources.srcDir(layout.buildDirectory.dir("native/resources"))
+    }
+}
+
+tasks.register("buildNatives", Exec) {
+    group = "build"
+    description = "Cross-build the Dear ImGui JNI libraries (see native/README.md)"
+    workingDir projectDir
+    commandLine "bash", "native/build.sh"
+    if (project.hasProperty("compatibleimgui.strictNatives")) {
+        environment "STRICT", "1"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Pure Java codecs / compression. These are nested into the mod jar.
+    include(implementation("io.airlift:aircompressor:0.27"))
+    include(implementation("org.jcodec:jcodec:0.2.5"))
+    include(implementation("org.jcraft:jorbis:0.0.17"))
+    include(implementation("com.googlecode.soundlibs:jlayer:1.0.1.4"))
+
+    // Compile-time targets. They are optional at runtime; the mixins are conditional.
+    compileOnly files("Axiom-6.1.5-for-MC26.3.jar")
+    compileOnly files("../Flashback/build/classes/java/main")
+    compileOnly files("../Flashback/deps/imgui-binding-1.90.0.jar")
+
+    // Needed only to resolve Flashback's method signatures.
+    compileOnly "org.bytedeco:javacv:1.5.14"
+    compileOnly "org.bytedeco:ffmpeg:8.1.2-1.5.14"
+    compileOnly "org.bytedeco:javacpp:1.5.14"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+    it.options.encoding = "UTF-8"
+}
+
+java {
+    withSourcesJar()
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}

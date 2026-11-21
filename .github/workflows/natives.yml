@@ -1,0 +1,80 @@
+name: native-imguis
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "native/**"
+      - "src/main/java/com/compatibleimgui/bridge/**"
+      - "src/main/java/com/compatibleimgui/mixin/nativebridge/**"
+      - ".github/workflows/natives.yml"
+
+jobs:
+  cross-desktop:
+    # One Linux host produces Linux, Windows and macOS binaries through Zig.
+    runs-on: ubuntu-24.04
+    env:
+      ZIG_VERSION: "0.17.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        run: |
+          curl -L --retry 5 -o /tmp/zig.tar.xz \
+            "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          tar -xf /tmp/zig.tar.xz -C /opt
+          echo "/opt/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+
+      - name: Build desktop targets
+        run: |
+          ./native/build.sh \
+            linux-x86_64 linux-aarch64 \
+            windows-x86_64 windows-aarch64 \
+            macos-x86_64 macos-aarch64
+
+      - name: Upload desktop natives
+        uses: actions/upload-artifact@v4
+        with:
+          name: natives-desktop
+          path: build/native/resources/compatibleimgui/native/**
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Android SDK / NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "ndk;27.2.12479018"
+
+      - name: Build Android aarch64
+        run: ./native/build.sh android-aarch64
+
+      - name: Upload Android native
+        uses: actions/upload-artifact@v4
+        with:
+          name: natives-android
+          path: build/native/resources/compatibleimgui/native/android-aarch64/**
+          if-no-files-found: error
+
+  macos-fallback:
+    # Only needed if Zig's macOS stubs are rejected by a future Xcode/linker.
+    # It is kept as a native-runner fallback and can be removed once the
+    # cross-desktop job is proven on macOS targets.
+    if: false
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig for macOS
+        run: |
+          curl -L --retry 5 -o /tmp/zig.tar.xz \
+            "https://ziglang.org/download/0.17.1/zig-aarch64-macos-0.17.1.tar.xz"
+          tar -xf /tmp/zig.tar.xz -C /opt
+          echo "/opt/zig-aarch64-macos-0.17.1" >> "$GITHUB_PATH"
+      - run: ./native/build.sh macos-x86_64 macos-aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: natives-macos
+          path: build/native/resources/compatibleimgui/native/macos-*/**

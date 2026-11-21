@@ -1,0 +1,20 @@
+{
+  "90": {
+    "package": "imgui.moulberry90",
+    "repo": "Moulberry/imgui-java",
+    "tag": "v1.90.0",
+    "commit": "c80552861d5de1c929dbe3210cba8b72792e4471",
+    "imgui": "3369cbd2776d7567ac198b1a3017a4fa2d547cc3",
+    "textEditor": "0a88824f7de8d0bd11d8419066caa7d3469395c4",
+    "library": "imgui-moulberry90-java64"
+  },
+  "92": {
+    "package": "imgui.moulberry92",
+    "repo": "Moulberry/imgui-java",
+    "tag": "v1.92-moulberry.2",
+    "commit": "4a2813430cc2bc64ba2106289d0c8606e656f32d",
+    "imgui": "b1bcb12a624af7509894c8e77dd47416997777fa",
+    "textEditor": "e8c57994dddfb533391b3bcc02be1b7596404297",
+    "library": "imgui-moulberry92-java64"
+  }
+}

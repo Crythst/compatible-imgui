@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Generate Mixin @Overwrite classes for the imgui-java binding.
+
+The generated methods are thin adapters into com.noimgui.imgui.PureUi. This
+keeps the binding classes' public API while removing every JNI call.
+"""
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+TARGETS = {
+    "90": {
+        "jar": os.path.join(ROOT, "..", "Flashback", "deps", "imgui-binding-1.90.0.jar"),
+        "package": "imgui.moulberry90",
+        "out": os.path.join(ROOT, "src", "main", "java", "com", "noimgui", "mixin", "imgui90"),
+        "classes": [
+            "ImGui", "ImGuiIO", "ImGuiStyle", "ImDrawList", "ImDrawData", "ImFont",
+            "ImFontAtlas", "ImFontConfig", "ImGuiViewport", "ImGuiPlatformIO", "ImGuiStorage",
+            "ImGuiListClipper", "ImGuiInputTextCallbackData",
+            "internal.ImGui", "internal.ImGuiDockNode",
+            "extension.texteditor.TextEditor", "extension.texteditor.TextEditorLanguage",
+        ],
+    },
+    "92": {
+        "jar": os.path.join(ROOT, "Axiom-6.1.5-for-MC26.3.jar"),
+        "package": "imgui.moulberry92",
+        "out": os.path.join(ROOT, "src", "main", "java", "com", "noimgui", "mixin", "imgui92"),
+        "classes": [
+            "ImGui", "ImGuiIO", "ImGuiStyle", "ImDrawList", "ImDrawData", "ImFont",
+            "ImFontAtlas", "ImFontConfig", "ImGuiViewport", "ImGuiPlatformIO", "ImGuiStorage",
+            "ImGuiListClipper", "ImGuiInputTextCallbackData",
+            "internal.ImGui", "internal.ImGuiDockNode",
+            "extension.texteditor.TextEditor", "extension.texteditor.TextEditorLanguage",
+        ],
+    },
+}
+
+DESC_RE = re.compile(r"^\s*descriptor:\s*(\S+)")
+METHOD_RE = re.compile(r"^\s{2}([^ ].*?)\s+([\w$<>]+)\((.*)\);\s*$")
+
+
+def run_javap(jar, class_name):
+    return subprocess.check_output(
+        ["javap", "-p", "-s", "-classpath", jar, class_name],
+        text=True,
+        errors="replace",
+    )
+
+
+def parse_methods(text):
+    lines = text.splitlines()
+    methods = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = METHOD_RE.match(line)
+        if m:
+            prefix = m.group(1).strip()
+            name = m.group(2)
+            desc = None
+            j = i + 1
+            while j < len(lines) and j < i + 6:
+                dm = DESC_RE.match(lines[j])
+                if dm:
+                    desc = dm.group(1)
+                    break
+                if METHOD_RE.match(lines[j]):
+                    break
+                j += 1
+            if desc:
+                flags = prefix.split()
+                is_static = "static" in flags
+                is_public = "public" in flags or "protected" in flags
+                is_synthetic = "synthetic" in flags or "bridge" in flags
+                if is_public and not is_synthetic and not name.startswith("<"):
+                    methods.append({"name": name, "desc": desc, "static": is_static})
+        i += 1
+    return methods
+
+
+def desc_types(desc):
+    """Return (parameter type names, return type name) in Java source form."""
+    assert desc.startswith("(")
+    end = desc.index(")")
+    params = []
+    i = 1
+    while i < end:
+        t, i = one_type(desc, i)
+        params.append(t)
+    ret, _ = one_type(desc, end + 1)
+    return params, ret
+
+
+def one_type(desc, i):
+    if i >= len(desc):
+        return "void", i
+    c = desc[i]
+    prim = {"V": "void", "Z": "boolean", "B": "byte", "C": "char", "S": "short",
+            "I": "int", "J": "long", "F": "float", "D": "double"}
+    if c in prim:
+        return prim[c], i + 1
+    if c == "L":
+        end = desc.index(";", i)
+        return desc[i + 1:end].replace("/", ".").replace("$", "."), end + 1
+    if c == "[":
+        inner, j = one_type(desc, i + 1)
+        return inner + "[]", j
+    raise ValueError("bad descriptor " + desc)
+
+
+def default_value(java_type):
+    return {
+        "void": "", "boolean": "false", "byte": "(byte) 0", "char": "(char) 0",
+        "short": "(short) 0", "int": "0", "long": "0L", "float": "0f", "double": "0d",
+    }.get(java_type, "null")
+
+
+def generate(version, cfg):
+    jar = cfg["jar"]
+    pkg = cfg["package"]
+    out_dir = cfg["out"]
+    os.makedirs(out_dir, exist_ok=True)
+    generated = []
+
+    for cls in cfg["classes"]:
+        fqcn = pkg + "." + cls
+        try:
+            text = run_javap(jar, fqcn)
+        except subprocess.CalledProcessError:
+            print(f"skip missing {fqcn}", file=sys.stderr)
+            continue
+        methods = parse_methods(text)
+        if not methods:
+            continue
+
+        simple = cls.split(".")[-1]
+        mixin_name = "Mixin" + simple + version if "." not in cls else "Mixin" + "".join(part[:1].upper() + part[1:] for part in cls.split(".")) + "Methods" + version
+        java_path = os.path.join(out_dir, mixin_name + ".java")
+        with open(java_path, "w", encoding="utf-8") as f:
+            f.write("// Generated by tools/generate_imgui_mixins.py. Do not edit.\n")
+            f.write("package com.noimgui.mixin.imgui%s;\n\n" % version)
+            f.write("import com.noimgui.imgui.PureUi;\n")
+            f.write("import org.spongepowered.asm.mixin.Mixin;\n")
+            f.write("import org.spongepowered.asm.mixin.Overwrite;\n\n")
+            f.write('@Mixin(targets = "%s", remap = false)\n' % fqcn)
+            f.write("public abstract class %s {\n\n" % mixin_name)
+
+            for m in methods:
+                params, ret = desc_types(m["desc"])
+                arg_names = [f"a{i}" for i in range(len(params))]
+                args_decl = ", ".join(f"final {t} {n}" for t, n in zip(params, arg_names))
+                static = m["static"]
+                self_expr = "null" if static else "this"
+                args_pack = ("new java.lang.Object[]{" + ", ".join(arg_names) + "}") if arg_names else "PureUi.NO_ARGS"
+
+                if ret == "boolean":
+                    call = "PureUi.callBool"
+                elif ret in ("byte", "char", "short", "int"):
+                    call = "PureUi.callInt"
+                elif ret == "long":
+                    call = "PureUi.callLong"
+                elif ret == "float":
+                    call = "PureUi.callFloat"
+                elif ret == "double":
+                    call = "PureUi.callDouble"
+                else:
+                    call = "PureUi.call"
+                invocation = "%s(%s, %s, %s, %s, %s)" % (
+                    call, java_string(fqcn), java_string(m["name"]), java_string(m["desc"]), self_expr, args_pack)
+
+                f.write("    @Overwrite(remap = false)\n")
+                f.write("    public %s%s %s(%s) {\n" % (
+                    "static " if static else "", ret, m["name"], args_decl))
+                if ret == "void":
+                    f.write("        %s;\n" % invocation)
+                elif ret in ("boolean", "byte", "char", "short", "int", "long", "float", "double"):
+                    f.write("        return (%s) %s;\n" % (ret, invocation))
+                else:
+                    f.write("        return (%s) %s;\n" % (ret, invocation))
+                f.write("    }\n\n")
+
+            f.write("}\n")
+        generated.append(java_path)
+    return generated
+
+
+def java_string(s):
+    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+if __name__ == "__main__":
+    for version, cfg in TARGETS.items():
+        files = generate(version, cfg)
+        print(f"{version}: generated {len(files)} mixins")

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "compatibleimgui",
+  "version": "${version}",
+  "name": "Compatible ImGui",
+  "description": "Rebuilt cross-platform Dear ImGui natives for Flashback and Axiom, plus portable Java FFmpeg and zstd replacements.",
+  "authors": ["compatible-imgui contributors"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.compatibleimgui.CompatibleImGuiMod"]
+  },
+  "mixins": [
+    "compatibleimgui.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": ">=26.2 <26.4",
+    "java": ">=25"
+  },
+  "suggests": {
+    "flashback": "*",
+    "axiom": "*"
+  }
+}
